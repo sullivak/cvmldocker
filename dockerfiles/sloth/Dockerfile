@@ -30,5 +30,5 @@ RUN git clone https://github.com/cvhciKIT/sloth.git
 WORKDIR /opt/sloth
 RUN python setup.py install
 
-
+ENV QT_X11_NO_MITSHM=1
 
