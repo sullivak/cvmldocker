@@ -29,6 +29,8 @@ ARG CAFFE_CLONE_TAG=rc4
 ENV KERAS_BACKEND=tensorflow
 ENV PYCHARM_HOME=/opt/pycharm
 ENV CAFFE_ROOT=/opt/caffe
+ENV OPENCV_ROOT=/opt/opencv
+ENV MXNET_ROOT=/opt/mxnet
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
   libtiff5=4.0.6-1 \
@@ -82,6 +84,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   python-tk \
   python-vtk \
   python-yaml \
+  python-pycurl \
   qt4-default \
   unzip \
   v4l-utils \
@@ -99,12 +102,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # opencv Fix commit: 3668a01fca0858c32b
 # NOTE: Ran into https://github.com/opencv/opencv/issues/7949 aka https://github.com/opencv/opencv_contrib/issues/919
 # opencv_contrib Fix commit abf44fcccfe2f281b
-WORKDIR /opt/opencv
+WORKDIR $OPENCV_ROOT
 # Ideally would: RUN git clone -b ${OPENCV_VERSION} --single-branch --depth 1 https://github.com/opencv/opencv.git && \
 RUN git clone https://github.com/opencv/opencv.git && cd opencv && git checkout 3668a01fca0858c32b
-WORKDIR /opt/opencv
+WORKDIR $OPENCV_ROOT
 RUN git clone https://github.com/opencv/opencv_contrib.git && cd opencv_contrib && git checkout abf44fcccfe2f281b
-WORKDIR /opt/opencv/opencv/build
+WORKDIR $OPENCV_ROOT/opencv/build
 # build, install, and cleanup in one RUN command/layer to avoid gigantic image
 RUN cmake -D CMAKE_BUILD_TYPE=RELEASE \
     -D CMAKE_INSTALL_PREFIX=/usr/local \
@@ -113,14 +116,16 @@ RUN cmake -D CMAKE_BUILD_TYPE=RELEASE \
     -D WITH_V4L=ON \
     -D BUILD_TIFF=ON \
     -D WITH_QT=4 \
-    -D OPENCV_EXTRA_MODULES_PATH=/opt/opencv/opencv_contrib/modules \
+    -D OPENCV_EXTRA_MODULES_PATH=$OPENCV_ROOT/opencv_contrib/modules \
     -D WITH_OPENGL=ON .. && \
   make -j4 && \
   make install && \
   echo "/usr/local/lib" | tee -a /etc/ld.so.conf.d/opencv.conf && \
   ldconfig && \
-  cp /opt/opencv/opencv/build/lib/cv2.so /usr/lib/python2.7/dist-packages/cv2.so && \
-  rm -rf /opt/opencv/opencv/build
+  cp $OPENCV_ROOT/opencv/build/lib/cv2.so /usr/lib/python2.7/dist-packages/cv2.so && \
+  rm -rf $OPENCV_ROOT/opencv/build && \
+  rm -rf $OPENCV_ROOT/opencv/.git && \
+  rm -rf $OPENCV_ROOT/opencv_contrib/.git
 
 # Install keras
 RUN pip --no-cache-dir install --no-dependencies git+git://github.com/fchollet/keras.git@${KERAS_VERSION}
@@ -128,6 +133,7 @@ RUN pip --no-cache-dir install --no-dependencies git+git://github.com/fchollet/k
 # Install other pip
 RUN pip --no-cache-dir --timeout=60 install \
     graphviz \
+    line_profiler \
     mayavi \
     nibabel \
     openslide-python \
@@ -137,6 +143,7 @@ RUN pip --no-cache-dir --timeout=60 install \
     scikit-image \
     SimpleITK \
     sklearn \
+    theano \
     && \
     python -m ipykernel.kernelspec
 
@@ -148,7 +155,8 @@ RUN git clone -b ${CAFFE_CLONE_TAG} --depth 1 https://github.com/BVLC/caffe.git 
     git clone https://github.com/NVIDIA/nccl.git && cd nccl && make -j install && cd .. && rm -rf nccl && \
     mkdir build && cd build && \
     cmake -DUSE_CUDNN=1 -DUSE_NCCL=1 -DBLAS=open .. && \
-    make -j"$(nproc)"
+    make -j"$(nproc)" && \
+    rm -rf $CAFFE_ROOT/.git
 
 ENV PYCAFFE_ROOT $CAFFE_ROOT/python
 ENV PYTHONPATH $PYCAFFE_ROOT:$PYTHONPATH
@@ -158,7 +166,8 @@ RUN echo "$CAFFE_ROOT/build/lib" >> /etc/ld.so.conf.d/caffe.conf && ldconfig
 # MXNet install: merging kaixhan's Dockerfile, mxnet's github Dockerfiles,
 # mxnet/setup-utils/install-mxnet-ubuntu-r.sh and documentation
 # Clone MXNet repo and move into it
-RUN cd /opt && git clone --recursive https://github.com/dmlc/mxnet && cd mxnet && \
+WORKDIR $MXNET_ROOT
+RUN git clone --recursive https://github.com/dmlc/mxnet . && \
   # Copy config.mk
   cp make/config.mk config.mk && \
   # Switch from atlas to OpenBLAS
@@ -167,15 +176,17 @@ RUN cd /opt && git clone --recursive https://github.com/dmlc/mxnet && cd mxnet &
   echo "USE_CUDA=1" >>config.mk && \
   echo "USE_CUDA_PATH=/usr/local/cuda" >>config.mk && \
   echo "USE_CUDNN=1" >>config.mk && \
-  make -j"$(nproc)" %% && \
-  cd /opt/mxnet/python && python setup.py install && \
-  echo "export PYTHONPATH=/opt/mxnet/python:$PYTHONPATH" >> /root/.bashrc && \
-  rm -rf /opt/mxnet/build
+  make -j"$(nproc)" && \
+  cd $MXNET_ROOT/python && python setup.py install && \
+  echo "export PYTHONPATH=$MXNET_ROOT/python:$PYTHONPATH" >> /root/.bashrc && \
+  rm -rf $MXNET_ROOT/build && \
+  rm -rf $MXNET_ROOT/.git
 
 # Install pycharm
-RUN wget https://download.jetbrains.com/python/pycharm-community-2016.2.3.tar.gz -O /tmp/pycharm.tar.gz &&\
+RUN wget https://download.jetbrains.com/python/pycharm-community-2017.2.2.tar.gz -O /tmp/pycharm.tar.gz &&\
     mkdir -p ${PYCHARM_HOME} && tar -xzvf /tmp/pycharm.tar.gz -C ${PYCHARM_HOME} --strip=1 &&\
-    ln -s /opt/pycharm/bin/pycharm.sh /bin/pycharm
+    ln -s ${PYCHARM_HOME}/bin/pycharm.sh /bin/pycharm &&\
+    rm -rf /tmp/pycharm.tar.gz
 
 # Convenience scripts
 WORKDIR /root
