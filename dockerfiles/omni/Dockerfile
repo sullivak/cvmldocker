@@ -1,4 +1,4 @@
-FROM tensorflow/tensorflow:1.0.1-gpu
+FROM tensorflow/tensorflow:1.3.0-devel-gpu
 
 MAINTAINER Ken Sullivan <ken.sullivan@kohyoung.com>
 
@@ -25,14 +25,14 @@ MAINTAINER Ken Sullivan <ken.sullivan@kohyoung.com>
 # NOTE: currently opencv and opencv_contrib using specific bug-fix commits past 3.2.0
 ARG OPENCV_VERSION=3.2.0
 ARG KERAS_VERSION=1.2.0
-ARG CAFFE_CLONE_TAG=rc4
+ARG CAFFE_CLONE_TAG=1.0
 ENV KERAS_BACKEND=tensorflow
 ENV PYCHARM_HOME=/opt/pycharm
 ENV CAFFE_ROOT=/opt/caffe
 ENV OPENCV_ROOT=/opt/opencv
 ENV MXNET_ROOT=/opt/mxnet
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends --allow-downgrades \
   libtiff5=4.0.6-1 \
   libtiffxx5=4.0.6-1 \
   libtiff5-dev=4.0.6-1 \
@@ -95,6 +95,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   apt-get clean && \
   apt-get autoremove && \
   rm -rf /var/lib/apt/lists/*
+
+# Install keras
+RUN pip --no-cache-dir install --no-dependencies git+git://github.com/fchollet/keras.git@${KERAS_VERSION}
+
+# Install other pip
+RUN pip --no-cache-dir --timeout=60 install \
+    graphviz \
+    line_profiler \
+    mayavi \
+    nibabel \
+    openslide-python \
+    Pillow \
+    pydicom \
+    pyside \
+    scikit-image \
+    SimpleITK \
+    sklearn \
+    theano \
+    && \
+    python -m ipykernel.kernelspec
 
 # Install opencv and opencv_contrib
 # Checkout specified versions
